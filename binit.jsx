@@ -1,23 +1,32 @@
-﻿const { useState, useRef, useEffect } = React;
+const { useState, useRef, useEffect } = React;
 
-// Key priority: config.js (local dev) ÔåÆ localStorage (Vercel/browser) ÔåÆ ""
-const getKey = () => (window.BINIT_CONFIG && window.BINIT_CONFIG.apiKey) || localStorage.getItem('BINIT_KEY') || "";
-const saveKey = (k) => localStorage.setItem('BINIT_KEY', k);
+// Local dev: config.js sets window.BINIT_CONFIG.apiKey. On Vercel: proxy via /api/gemini
+const LOCAL_KEY = (window.BINIT_CONFIG && window.BINIT_CONFIG.apiKey) || null;
 
 const callGemini = async (prompt, imageBase64) => {
-  const parts = [{ text: prompt }];
-  if (imageBase64) parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64.split(',')[1] } });
   const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
   let lastErr = null;
   for (const model of models) {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getKey()}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { response_mime_type: "application/json" } })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || `Error from ${model}`);
-      return JSON.parse(data.candidates[0].content.parts[0].text);
+      if (LOCAL_KEY) {
+        const parts = [{ text: prompt }];
+        if (imageBase64) parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64.split(',')[1] } });
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${LOCAL_KEY}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts }], generationConfig: { response_mime_type: "application/json" } })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || `Error from ${model}`);
+        return JSON.parse(data.candidates[0].content.parts[0].text);
+      } else {
+        const res = await fetch('/api/gemini', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, imageBase64, model })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Error from ${model}`);
+        return data.result;
+      }
     } catch (e) { console.warn(`${model} failed:`, e.message); lastErr = e; }
   }
   throw new Error(`All models failed. ${lastErr?.message}`);
@@ -25,15 +34,15 @@ const callGemini = async (prompt, imageBase64) => {
 
 const T = {
   en: { s1:"What are you throwing away?", s2:"Where are you throwing this?", scan:"Identify Waste", scanBin:"Audit Dustbin", impact:"Impact", loading:"Analysing...", safe:"Safe to dispose!", stop:"STOP!", or:"or describe it", ph:"e.g. Banana peel, Old battery...", change:"Tap to change", reset:"Scan New Item", capture:"Capture", takePhoto:"Take Photo", uploadGallery:"Upload from Gallery" },
-  hi: { s1:"ÓñåÓñ¬ ÓñòÓÑìÓñ»Óñ¥ Óñ½ÓÑçÓñéÓñò Óñ░Óñ╣ÓÑç Óñ╣ÓÑêÓñé?", s2:"ÓñçÓñ©ÓÑç ÓñòÓñ╣Óñ¥Óñü Óñ½ÓÑçÓñéÓñò Óñ░Óñ╣ÓÑç Óñ╣ÓÑêÓñé?", scan:"Óñ¬Óñ╣ÓñÜÓñ¥Óñ¿ÓÑçÓñé", scanBin:"ÓñíÓñ©ÓÑìÓñƒÓñ¼Óñ┐Óñ¿ Óñ£Óñ¥ÓñüÓñÜÓÑçÓñé", impact:"Óñ¬ÓÑìÓñ░Óñ¡Óñ¥ÓñÁ", loading:"ÓñÁÓñ┐ÓñÂÓÑìÓñ▓ÓÑçÓñÀÓñú...", safe:"Óñ©ÓÑüÓñ░ÓñòÓÑìÓñÀÓñ┐Óññ Óñ╣ÓÑê!", stop:"Óñ░ÓÑüÓñòÓÑçÓñé!", or:"Óñ»Óñ¥ ÓñÁÓñ░ÓÑìÓñúÓñ¿ ÓñòÓñ░ÓÑçÓñé", ph:"ÓñëÓñªÓñ¥. ÓñòÓÑçÓñ▓ÓÑç ÓñòÓñ¥ ÓñøÓñ┐Óñ▓ÓñòÓñ¥...", change:"Óñ¼ÓñªÓñ▓ÓÑçÓñé", reset:"Óñ¿Óñê ÓñÁÓñ©ÓÑìÓññÓÑü", capture:"ÓñòÓÑêÓñ¬ÓÑìÓñÜÓñ░", takePhoto:"Óñ½ÓÑïÓñƒÓÑï Óñ▓ÓÑçÓñé", uploadGallery:"ÓñùÓÑêÓñ▓Óñ░ÓÑÇ Óñ©ÓÑç ÓñàÓñ¬Óñ▓ÓÑïÓñí" },
-  kn: { s1:"Ó▓¿Ó│ÇÓ▓ÁÓ│ü Ó▓ÅÓ▓¿Ó▓¿Ó│ìÓ▓¿Ó│ü Ó▓¼Ó▓┐Ó▓©Ó▓¥Ó▓íÓ│üÓ▓ñÓ│ìÓ▓ñÓ▓┐Ó▓ªÓ│ìÓ▓ªÓ│ÇÓ▓░Ó▓┐?", s2:"Ó▓çÓ▓ªÓ▓¿Ó│ìÓ▓¿Ó│ü Ó▓ÄÓ▓▓Ó│ìÓ▓▓Ó▓┐ Ó▓¼Ó▓┐Ó▓©Ó▓¥Ó▓íÓ│üÓ▓ñÓ│ìÓ▓ñÓ▓┐Ó▓ªÓ│ìÓ▓ªÓ│ÇÓ▓░Ó▓┐?", scan:"Ó▓ùÓ│üÓ▓░Ó│üÓ▓ñÓ▓┐Ó▓©Ó▓┐", scanBin:"Ó▓íÓ▓©Ó│ìÓ▓ƒÓ│ìÔÇîÓ▓¼Ó▓┐Ó▓¿Ó│ì Ó▓¬Ó▓░Ó▓┐Ó▓ÂÓ│ÇÓ▓▓Ó▓┐Ó▓©Ó▓┐", impact:"Ó▓¬Ó▓░Ó▓┐Ó▓úÓ▓¥Ó▓«", loading:"Ó▓ÁÓ▓┐Ó▓ÂÓ│ìÓ▓▓Ó│çÓ▓ÀÓ▓┐Ó▓©Ó▓▓Ó▓¥Ó▓ùÓ│üÓ▓ñÓ│ìÓ▓ñÓ▓┐Ó▓ªÓ│å...", safe:"Ó▓©Ó│üÓ▓░Ó▓òÓ│ìÓ▓ÀÓ▓┐Ó▓ñ!", stop:"Ó▓¿Ó▓┐Ó▓▓Ó│ìÓ▓▓Ó▓┐Ó▓©Ó▓┐!", or:"Ó▓àÓ▓ÑÓ▓ÁÓ▓¥ Ó▓ÁÓ▓┐Ó▓ÁÓ▓░Ó▓┐Ó▓©Ó▓┐", ph:"Ó▓ëÓ▓ªÓ▓¥. Ó▓¼Ó▓¥Ó▓│Ó│åÓ▓╣Ó▓úÓ│ìÓ▓úÓ▓┐Ó▓¿ Ó▓©Ó▓┐Ó▓¬Ó│ìÓ▓¬Ó│å...", change:"Ó▓¼Ó▓ªÓ▓▓Ó▓¥Ó▓»Ó▓┐Ó▓©Ó▓┐", reset:"Ó▓╣Ó│èÓ▓© Ó▓ÁÓ▓©Ó│ìÓ▓ñÓ│ü", capture:"Ó▓òÓ│ìÓ▓»Ó▓¥Ó▓¬Ó│ìÓ▓ÜÓ▓░Ó│ì", takePhoto:"Ó▓½Ó│ïÓ▓ƒÓ│ï Ó▓ñÓ│åÓ▓ùÓ│åÓ▓»Ó▓┐Ó▓░Ó▓┐", uploadGallery:"Ó▓ùÓ│ìÓ▓»Ó▓¥Ó▓▓Ó▓░Ó▓┐" }
+  hi: { s1:"Ã“Ã±Ã¥Ã“Ã±Â¬ Ã“Ã±Ã²Ã“Ã‘Ã¬Ã“Ã±Â»Ã“Ã±Â¥ Ã“Ã±Â½Ã“Ã‘Ã§Ã“Ã±Ã©Ã“Ã±Ã² Ã“Ã±â–‘Ã“Ã±â•£Ã“Ã‘Ã§ Ã“Ã±â•£Ã“Ã‘ÃªÃ“Ã±Ã©?", s2:"Ã“Ã±Ã§Ã“Ã±Â©Ã“Ã‘Ã§ Ã“Ã±Ã²Ã“Ã±â•£Ã“Ã±Â¥Ã“Ã±Ã¼ Ã“Ã±Â½Ã“Ã‘Ã§Ã“Ã±Ã©Ã“Ã±Ã² Ã“Ã±â–‘Ã“Ã±â•£Ã“Ã‘Ã§ Ã“Ã±â•£Ã“Ã‘ÃªÃ“Ã±Ã©?", scan:"Ã“Ã±Â¬Ã“Ã±â•£Ã“Ã±ÃœÃ“Ã±Â¥Ã“Ã±Â¿Ã“Ã‘Ã§Ã“Ã±Ã©", scanBin:"Ã“Ã±Ã­Ã“Ã±Â©Ã“Ã‘Ã¬Ã“Ã±Æ’Ã“Ã±Â¼Ã“Ã±â”Ã“Ã±Â¿ Ã“Ã±Â£Ã“Ã±Â¥Ã“Ã±Ã¼Ã“Ã±ÃœÃ“Ã‘Ã§Ã“Ã±Ã©", impact:"Ã“Ã±Â¬Ã“Ã‘Ã¬Ã“Ã±â–‘Ã“Ã±Â¡Ã“Ã±Â¥Ã“Ã±Ã", loading:"Ã“Ã±ÃÃ“Ã±â”Ã“Ã±Ã‚Ã“Ã‘Ã¬Ã“Ã±â–“Ã“Ã‘Ã§Ã“Ã±Ã€Ã“Ã±Ãº...", safe:"Ã“Ã±Â©Ã“Ã‘Ã¼Ã“Ã±â–‘Ã“Ã±Ã²Ã“Ã‘Ã¬Ã“Ã±Ã€Ã“Ã±â”Ã“Ã±Ã± Ã“Ã±â•£Ã“Ã‘Ãª!", stop:"Ã“Ã±â–‘Ã“Ã‘Ã¼Ã“Ã±Ã²Ã“Ã‘Ã§Ã“Ã±Ã©!", or:"Ã“Ã±Â»Ã“Ã±Â¥ Ã“Ã±ÃÃ“Ã±â–‘Ã“Ã‘Ã¬Ã“Ã±ÃºÃ“Ã±Â¿ Ã“Ã±Ã²Ã“Ã±â–‘Ã“Ã‘Ã§Ã“Ã±Ã©", ph:"Ã“Ã±Ã«Ã“Ã±ÂªÃ“Ã±Â¥. Ã“Ã±Ã²Ã“Ã‘Ã§Ã“Ã±â–“Ã“Ã‘Ã§ Ã“Ã±Ã²Ã“Ã±Â¥ Ã“Ã±Ã¸Ã“Ã±â”Ã“Ã±â–“Ã“Ã±Ã²Ã“Ã±Â¥...", change:"Ã“Ã±Â¼Ã“Ã±ÂªÃ“Ã±â–“Ã“Ã‘Ã§Ã“Ã±Ã©", reset:"Ã“Ã±Â¿Ã“Ã±Ãª Ã“Ã±ÃÃ“Ã±Â©Ã“Ã‘Ã¬Ã“Ã±Ã±Ã“Ã‘Ã¼", capture:"Ã“Ã±Ã²Ã“Ã‘ÃªÃ“Ã±Â¬Ã“Ã‘Ã¬Ã“Ã±ÃœÃ“Ã±â–‘", takePhoto:"Ã“Ã±Â½Ã“Ã‘Ã¯Ã“Ã±Æ’Ã“Ã‘Ã¯ Ã“Ã±â–“Ã“Ã‘Ã§Ã“Ã±Ã©", uploadGallery:"Ã“Ã±Ã¹Ã“Ã‘ÃªÃ“Ã±â–“Ã“Ã±â–‘Ã“Ã‘Ã‡ Ã“Ã±Â©Ã“Ã‘Ã§ Ã“Ã±Ã Ã“Ã±Â¬Ã“Ã±â–“Ã“Ã‘Ã¯Ã“Ã±Ã­" },
+  kn: { s1:"Ã“â–“Â¿Ã“â”‚Ã‡Ã“â–“ÃÃ“â”‚Ã¼ Ã“â–“Ã…Ã“â–“Â¿Ã“â–“Â¿Ã“â”‚Ã¬Ã“â–“Â¿Ã“â”‚Ã¼ Ã“â–“Â¼Ã“â–“â”Ã“â–“Â©Ã“â–“Â¥Ã“â–“Ã­Ã“â”‚Ã¼Ã“â–“Ã±Ã“â”‚Ã¬Ã“â–“Ã±Ã“â–“â”Ã“â–“ÂªÃ“â”‚Ã¬Ã“â–“ÂªÃ“â”‚Ã‡Ã“â–“â–‘Ã“â–“â”?", s2:"Ã“â–“Ã§Ã“â–“ÂªÃ“â–“Â¿Ã“â”‚Ã¬Ã“â–“Â¿Ã“â”‚Ã¼ Ã“â–“Ã„Ã“â–“â–“Ã“â”‚Ã¬Ã“â–“â–“Ã“â–“â” Ã“â–“Â¼Ã“â–“â”Ã“â–“Â©Ã“â–“Â¥Ã“â–“Ã­Ã“â”‚Ã¼Ã“â–“Ã±Ã“â”‚Ã¬Ã“â–“Ã±Ã“â–“â”Ã“â–“ÂªÃ“â”‚Ã¬Ã“â–“ÂªÃ“â”‚Ã‡Ã“â–“â–‘Ã“â–“â”?", scan:"Ã“â–“Ã¹Ã“â”‚Ã¼Ã“â–“â–‘Ã“â”‚Ã¼Ã“â–“Ã±Ã“â–“â”Ã“â–“Â©Ã“â–“â”", scanBin:"Ã“â–“Ã­Ã“â–“Â©Ã“â”‚Ã¬Ã“â–“Æ’Ã“â”‚Ã¬Ã”Ã‡Ã®Ã“â–“Â¼Ã“â–“â”Ã“â–“Â¿Ã“â”‚Ã¬ Ã“â–“Â¬Ã“â–“â–‘Ã“â–“â”Ã“â–“Ã‚Ã“â”‚Ã‡Ã“â–“â–“Ã“â–“â”Ã“â–“Â©Ã“â–“â”", impact:"Ã“â–“Â¬Ã“â–“â–‘Ã“â–“â”Ã“â–“ÃºÃ“â–“Â¥Ã“â–“Â«", loading:"Ã“â–“ÃÃ“â–“â”Ã“â–“Ã‚Ã“â”‚Ã¬Ã“â–“â–“Ã“â”‚Ã§Ã“â–“Ã€Ã“â–“â”Ã“â–“Â©Ã“â–“â–“Ã“â–“Â¥Ã“â–“Ã¹Ã“â”‚Ã¼Ã“â–“Ã±Ã“â”‚Ã¬Ã“â–“Ã±Ã“â–“â”Ã“â–“ÂªÃ“â”‚Ã¥...", safe:"Ã“â–“Â©Ã“â”‚Ã¼Ã“â–“â–‘Ã“â–“Ã²Ã“â”‚Ã¬Ã“â–“Ã€Ã“â–“â”Ã“â–“Ã±!", stop:"Ã“â–“Â¿Ã“â–“â”Ã“â–“â–“Ã“â”‚Ã¬Ã“â–“â–“Ã“â–“â”Ã“â–“Â©Ã“â–“â”!", or:"Ã“â–“Ã Ã“â–“Ã‘Ã“â–“ÃÃ“â–“Â¥ Ã“â–“ÃÃ“â–“â”Ã“â–“ÃÃ“â–“â–‘Ã“â–“â”Ã“â–“Â©Ã“â–“â”", ph:"Ã“â–“Ã«Ã“â–“ÂªÃ“â–“Â¥. Ã“â–“Â¼Ã“â–“Â¥Ã“â–“â”‚Ã“â”‚Ã¥Ã“â–“â•£Ã“â–“ÃºÃ“â”‚Ã¬Ã“â–“ÃºÃ“â–“â”Ã“â–“Â¿ Ã“â–“Â©Ã“â–“â”Ã“â–“Â¬Ã“â”‚Ã¬Ã“â–“Â¬Ã“â”‚Ã¥...", change:"Ã“â–“Â¼Ã“â–“ÂªÃ“â–“â–“Ã“â–“Â¥Ã“â–“Â»Ã“â–“â”Ã“â–“Â©Ã“â–“â”", reset:"Ã“â–“â•£Ã“â”‚Ã¨Ã“â–“Â© Ã“â–“ÃÃ“â–“Â©Ã“â”‚Ã¬Ã“â–“Ã±Ã“â”‚Ã¼", capture:"Ã“â–“Ã²Ã“â”‚Ã¬Ã“â–“Â»Ã“â–“Â¥Ã“â–“Â¬Ã“â”‚Ã¬Ã“â–“ÃœÃ“â–“â–‘Ã“â”‚Ã¬", takePhoto:"Ã“â–“Â½Ã“â”‚Ã¯Ã“â–“Æ’Ã“â”‚Ã¯ Ã“â–“Ã±Ã“â”‚Ã¥Ã“â–“Ã¹Ã“â”‚Ã¥Ã“â–“Â»Ã“â–“â”Ã“â–“â–‘Ã“â–“â”", uploadGallery:"Ã“â–“Ã¹Ã“â”‚Ã¬Ã“â–“Â»Ã“â–“Â¥Ã“â–“â–“Ã“â–“â–‘Ã“â–“â”" }
 };
 
 const BIN = {
-  wet:      { c:"#5a8c4e", bg:"linear-gradient(135deg,#2d4a1e,#3a6028)", ic:"­ƒƒó", l:"Wet" },
-  dry:      { c:"#c17f4a", bg:"linear-gradient(135deg,#6b3d1a,#8b5626)", ic:"­ƒƒñ", l:"Dry" },
-  hazardous:{ c:"#c45c3a", bg:"linear-gradient(135deg,#7a2414,#9a3020)", ic:"­ƒö┤", l:"Hazard" },
-  ewaste:   { c:"#8b6a9e", bg:"linear-gradient(135deg,#3d2458,#52346e)", ic:"ÔÜ½", l:"E-Waste" }
+  wet:      { c:"#5a8c4e", bg:"linear-gradient(135deg,#2d4a1e,#3a6028)", ic:"Â­Æ’Æ’Ã³", l:"Wet" },
+  dry:      { c:"#c17f4a", bg:"linear-gradient(135deg,#6b3d1a,#8b5626)", ic:"Â­Æ’Æ’Ã±", l:"Dry" },
+  hazardous:{ c:"#c45c3a", bg:"linear-gradient(135deg,#7a2414,#9a3020)", ic:"Â­Æ’Ã¶â”¤", l:"Hazard" },
+  ewaste:   { c:"#8b6a9e", bg:"linear-gradient(135deg,#3d2458,#52346e)", ic:"Ã”ÃœÂ½", l:"E-Waste" }
 };
 const impactCol = s => s <= 3 ? "#5a8c4e" : s <= 7 ? "#c4963a" : "#c45c3a";
 
@@ -123,14 +132,14 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
             <button onClick={stopCamera}
               style={{ padding:'11px 22px', borderRadius:50, background:'rgba(60,30,10,0.75)', color:'#e8d5b7',
                 border:'1px solid rgba(200,160,100,0.3)', fontSize:14, fontWeight:700, cursor:'pointer' }}>
-              Ô£ò Cancel
+              Ã”Â£Ã² Cancel
             </button>
             <button onClick={capturePhoto}
               style={{ padding:'11px 28px', borderRadius:50,
                 background:'linear-gradient(135deg,#c17f4a,#a0622e)', color:'#fff',
                 border:'none', fontSize:15, fontWeight:800, cursor:'pointer',
                 boxShadow:'0 4px 16px rgba(193,127,74,0.4)' }}>
-              ­ƒô© {t.capture}
+              Â­Æ’Ã´Â© {t.capture}
             </button>
           </div>
         </div>
@@ -139,7 +148,7 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
           border:'2px dashed rgba(160,120,80,0.25)', display:'flex',
           alignItems:'center', justifyContent:'center', flexDirection:'column', gap:6,
           background:'rgba(180,140,100,0.05)', marginBottom:10 }}>
-          <div style={{ fontSize:40 }}>­ƒôÀ</div>
+          <div style={{ fontSize:40 }}>Â­Æ’Ã´Ã€</div>
           <span style={{ color:'#9a7a5a', fontSize:13, fontWeight:600 }}>Add a photo of the waste</span>
         </div>
       )}
@@ -148,11 +157,11 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={startCamera}
             style={miniBtn('linear-gradient(135deg,#c17f4a,#a0622e)')}>
-            ­ƒôÀ {t.takePhoto}
+            Â­Æ’Ã´Ã€ {t.takePhoto}
           </button>
           <button onClick={() => fileRef.current && fileRef.current.click()}
             style={miniBtn('rgba(180,140,100,0.12)', '1px solid rgba(160,120,80,0.25)', '#9a7a5a')}>
-            ­ƒû╝ {t.uploadGallery}
+            Â­Æ’Ã»â• {t.uploadGallery}
           </button>
         </div>
       )}
@@ -171,34 +180,9 @@ function App() {
   const [res2, setRes2] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [apiKey, setApiKey] = useState(getKey());
-  const [keyInput, setKeyInput] = useState("");
   const f1 = useRef(null), f2 = useRef(null);
   const t = T[lang];
 
-  // Show setup screen if no key available (Vercel deployment)
-  if (!apiKey) {
-    return (
-      <div style={{ minHeight:'100vh', background:'linear-gradient(160deg,#faf6f0 0%,#f0e6d3 60%,#e8d9c4 100%)', display:'flex', alignItems:'center', justifyContent:'center', padding:24, fontFamily:"'Segoe UI',system-ui,sans-serif" }}>
-        <div style={{ width:'100%', maxWidth:400, background:'rgba(255,249,241,0.95)', borderRadius:24, border:'1px solid rgba(180,140,100,0.2)', padding:'32px 24px', boxShadow:'0 4px 24px rgba(120,80,40,0.08)' }}>
-          <h1 style={{ margin:'0 0 4px', fontSize:26, fontWeight:900, color:'#3d2415' }}>­ƒùæ´©Å BinIt</h1>
-          <p style={{ margin:'0 0 24px', fontSize:12, color:'#9a7a5a', letterSpacing:2, textTransform:'uppercase' }}>Know Your Bin</p>
-          <p style={{ fontSize:14, color:'#6b4f2a', lineHeight:1.6, margin:'0 0 20px' }}>Paste your <strong>Google AI Studio</strong> API key to get started. It's stored only in your browser.</p>
-          <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)}
-            placeholder="AIzaSy..."
-            style={{ width:'100%', padding:'14px 16px', borderRadius:14, border:'1px solid rgba(160,120,80,0.3)', background:'rgba(255,245,232,0.8)', color:'#3d2415', fontSize:15, marginBottom:16, outline:'none' }} />
-          <button
-            onClick={() => { if(keyInput.trim()) { saveKey(keyInput.trim()); setApiKey(keyInput.trim()); } }}
-            style={{ width:'100%', padding:'15px', borderRadius:14, background:'linear-gradient(135deg,#c17f4a,#a0622e)', color:'#fff', border:'none', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 4px 16px rgba(193,127,74,0.3)' }}>
-            Get Started ÔåÆ
-          </button>
-          <p style={{ textAlign:'center', marginTop:16, fontSize:12, color:'#b0906a' }}>
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color:'#c17f4a' }}>Get a free key from Google AI Studio</a>
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   const readFile = (e, set) => {
     const f = e.target.files[0];
@@ -260,7 +244,7 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
       {/* Header */}
       <div style={{ width:'100%', maxWidth:420, marginBottom:24 }}>
         <div style={{ marginBottom:16 }}>
-          <h1 style={{ margin:0, fontSize:28, fontWeight:900, color:P.text, letterSpacing:-0.5 }}>­ƒùæ´©Å BinIt</h1>
+          <h1 style={{ margin:0, fontSize:28, fontWeight:900, color:P.text, letterSpacing:-0.5 }}>Â­Æ’Ã¹Ã¦Â´Â©Ã… BinIt</h1>
           <p style={{ margin:'2px 0 0', fontSize:11, color:P.muted, letterSpacing:2, textTransform:'uppercase' }}>Know Your Bin</p>
         </div>
 
@@ -272,7 +256,7 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
 
         {/* Language */}
         <div style={{ display:'flex', gap:6 }}>
-          {[['en','EN'],['hi','Óñ╣Óñ┐Óñé'],['kn','Ó▓ò']].map(([k,v]) => (
+          {[['en','EN'],['hi','Ã“Ã±â•£Ã“Ã±â”Ã“Ã±Ã©'],['kn','Ã“â–“Ã²']].map(([k,v]) => (
             <button key={k} onClick={() => { setLang(k); reset(); }}
               style={{ flex:1, padding:'10px 0', borderRadius:10,
                 background: lang===k ? 'rgba(193,127,74,0.12)' : 'rgba(160,120,80,0.06)',
@@ -286,7 +270,7 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
       {/* Error */}
       {err && (
         <div className="anim" style={{ width:'100%', maxWidth:420, background:'rgba(196,92,58,0.08)', border:'1px solid rgba(196,92,58,0.25)', color:'#c45c3a', padding:'14px 16px', borderRadius:14, marginBottom:16, fontSize:14, lineHeight:1.5 }}>
-          ÔÜá´©Å {err}
+          Ã”ÃœÃ¡Â´Â©Ã… {err}
         </div>
       )}
 
@@ -343,17 +327,17 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
             </div>
             <p style={{ fontSize:14, lineHeight:1.6, margin:'0 0 14px', color:'rgba(255,255,255,0.85)' }}>{res1.why}</p>
             <div style={{ fontSize:13, color:'rgba(255,255,255,0.75)', padding:'12px 14px', background:'rgba(0,0,0,0.2)', borderRadius:12, lineHeight:1.5 }}>
-              ­ƒÆí {res1.didYouKnow}
+              Â­Æ’Ã†Ã­ {res1.didYouKnow}
             </div>
             {res1.ifWrong && (
               <div style={{ fontSize:12, color:'#f4c0a8', padding:'10px 14px', background:'rgba(196,92,58,0.15)', borderRadius:10, marginTop:12, lineHeight:1.5, border:'1px solid rgba(196,92,58,0.2)' }}>
-                ÔÜá´©Å {res1.ifWrong}
+                Ã”ÃœÃ¡Â´Â©Ã… {res1.ifWrong}
               </div>
             )}
             {res1.actionUrl && res1.actionLabel && (
               <a href={res1.actionUrl} target="_blank" rel="noopener noreferrer"
                 style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'14px', borderRadius:14, background:'rgba(160,120,80,0.2)', border:'1px solid rgba(180,140,100,0.3)', color:'#e8c89a', textDecoration:'none', fontWeight:700, fontSize:14, marginTop:14 }}>
-                ­ƒöù {res1.actionLabel}
+                Â­Æ’Ã¶Ã¹ {res1.actionLabel}
               </a>
             )}
           </div>
@@ -387,7 +371,7 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
           {/* Audit section */}
           {res2 ? (
             <div className="anim" style={{ ...P.card, background: res2.isSafe ? 'linear-gradient(135deg,#2d4a1e,#3a6028)' : 'linear-gradient(135deg,#7a2414,#9a3020)', border:`1px solid ${res2.isSafe ? '#5a8c4e40' : '#c45c3a40'}`, textAlign:'center', '--gc': res2.isSafe ? 'rgba(90,140,78,0.2)' : 'rgba(196,92,58,0.2)', animation:'fadeUp .4s ease-out, glow 2s ease infinite' }}>
-              <div style={{ fontSize:56, marginBottom:8 }}>{res2.isSafe ? 'Ô£à' : '­ƒøæ'}</div>
+              <div style={{ fontSize:56, marginBottom:8 }}>{res2.isSafe ? 'Ã”Â£Ã ' : 'Â­Æ’Ã¸Ã¦'}</div>
               <h2 style={{ margin:'0 0 12px', fontSize:22, fontWeight:800, color: res2.isSafe ? '#a8d498' : '#f4c0a8' }}>{res2.isSafe ? t.safe : t.stop}</h2>
               <p style={{ fontSize:15, lineHeight:1.6, margin:'0 0 24px', color:'rgba(255,255,255,0.85)' }}>{res2.feedback}</p>
               <button onClick={reset} style={{ ...accentBtn('rgba(255,255,255,0.12)'), borderRadius:14, fontWeight:600 }}>{t.reset}</button>
@@ -415,7 +399,7 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
 
           {!res2 && (
             <button onClick={reset} style={{ width:'100%', maxWidth:420, padding:'14px', marginTop:12, borderRadius:14, background:'transparent', border:'1px solid rgba(160,120,80,0.2)', color:P.muted, fontSize:14, fontWeight:600 }}>
-              ÔåÉ {t.reset}
+              Ã”Ã¥Ã‰ {t.reset}
             </button>
           )}
         </div>
