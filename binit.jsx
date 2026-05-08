@@ -1,4 +1,4 @@
-﻿const { useState, useRef, useEffect } = React;
+const { useState, useRef, useEffect } = React;
 
 // Local dev: config.js sets window.BINIT_CONFIG.apiKey. On Vercel: proxy via /api/gemini
 const LOCAL_KEY = (window.BINIT_CONFIG && window.BINIT_CONFIG.apiKey) || null;
@@ -72,17 +72,21 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
+
   const startCamera = async () => {
     setVideoReady(false);
     try {
-      const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Simple constraints — no forced resolution so camera starts immediately on mobile
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play().then(() => setVideoReady(true)).catch(() => setVideoReady(true));
+          videoRef.current.play();
+          setVideoReady(true);
         };
+        // Fallback: force-enable capture after 1.5s in case event fires late
+        setTimeout(() => setVideoReady(true), 1500);
       }
       setCamActive(true);
     } catch (e) {
@@ -90,6 +94,7 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
       fileRef.current && fileRef.current.click();
     }
   };
+
 
   const stopCamera = () => {
     if (streamRef.current) { streamRef.current.getTracks().forEach(tr => tr.stop()); streamRef.current = null; }
