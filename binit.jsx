@@ -1,4 +1,4 @@
-const { useState, useRef, useEffect } = React;
+﻿const { useState, useRef, useEffect } = React;
 
 // Local dev: config.js sets window.BINIT_CONFIG.apiKey. On Vercel: proxy via /api/gemini
 const LOCAL_KEY = (window.BINIT_CONFIG && window.BINIT_CONFIG.apiKey) || null;
@@ -212,7 +212,8 @@ function App() {
         `You are a waste classification expert for India (BBMP Bengaluru guidelines). The user has ${wasteImg ? "shared a photo of waste" : `described: "${txt}"`}.
 Respond ONLY in valid JSON with these exact fields:
 {"item":"name","bin":"wet|dry|hazardous|ewaste","binLabel":"Wet Waste|Dry Waste|Hazardous Waste|E-Waste","why":"one sentence","ifWrong":"consequence","didYouKnow":"one fact","impactScore":5,"actionLabel":"NGO label or empty","actionUrl":"URL or empty","ecoAction":{"icon":"emoji","title":"e.g. Compost It!","tagline":"motivating one-liner","steps":["step1","step2","step3"]}}
-For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit composting; newspaper -> papier-mache craft or Goonj donation; old phone -> factory reset then iGive/Goonj donation; bleach bottle -> rinse 3x, air-dry, dry waste; syringe -> sharps container then BBMP hazardous; laptop battery -> Attero e-waste pickup; tea bag -> compost or balcony garden; cardboard box -> upcycle into organizer; printer ink cartridge -> HP/Canon take-back. Steps must be practical and India-specific (max 3 steps, concise). Translate why, ifWrong, didYouKnow, ecoAction.tagline, ecoAction.steps into ${lName}. Keep all other fields in English.`,
+IMPORTANT: If bin is "ewaste", you MUST set actionLabel to "Recycle via Zolopik" and actionUrl to "https://zolopik.com". Do not use any other e-waste service.
+For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit composting; newspaper -> papier-mache craft or Goonj donation; old phone -> factory reset, wipe data, then book free Zolopik pickup at zolopik.com; bleach bottle -> rinse 3x, air-dry, dry waste; syringe -> sharps container then BBMP hazardous; laptop/battery/charger -> book free Zolopik e-waste pickup at zolopik.com; tea bag -> compost or balcony garden; cardboard box -> upcycle into organizer; printer ink cartridge -> HP/Canon take-back. Steps must be practical and India-specific (max 3 steps, concise). Translate why, ifWrong, didYouKnow, ecoAction.tagline, ecoAction.steps into ${lName}. Keep all other fields in English.`,
         wasteImg
       );
       setRes1(r); setStep(2);
