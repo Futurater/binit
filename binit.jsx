@@ -66,68 +66,49 @@ const P = {
 
 // --- Camera Zone Component ---
 function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
-  const [camActive, setCamActive] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [camError, setCamError] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-
   const startCamera = async () => {
-    setVideoReady(false);
+    setVideoReady(false); setCamError(false);
     try {
-      // Simple constraints — no forced resolution so camera starts immediately on mobile
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play();
-          setVideoReady(true);
-        };
-        // Fallback: force-enable capture after 1.5s in case event fires late
+        videoRef.current.onloadedmetadata = () => { videoRef.current.play(); setVideoReady(true); };
         setTimeout(() => setVideoReady(true), 1500);
       }
-      setCamActive(true);
-    } catch (e) {
-      console.warn('Camera unavailable:', e);
-      fileRef.current && fileRef.current.click();
-    }
+    } catch (e) { console.warn('Camera unavailable:', e); setCamError(true); }
   };
-
 
   const stopCamera = () => {
     if (streamRef.current) { streamRef.current.getTracks().forEach(tr => tr.stop()); streamRef.current = null; }
-    setCamActive(false);
     setVideoReady(false);
   };
 
   const capturePhoto = () => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c) return;
-    // Use actual video dimensions, fall back to 640x480 if not yet available
-    const w = v.videoWidth || 640;
-    const h = v.videoHeight || 480;
+    const w = v.videoWidth || 640, h = v.videoHeight || 480;
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
     const img = c.toDataURL('image/jpeg', 0.85);
-    if (!img || img === 'data:,') { console.warn('Capture empty'); return; }
+    if (!img || img === 'data:,') return;
     onCapture(img);
     stopCamera();
   };
 
-  useEffect(() => () => stopCamera(), []);
-
-  const miniBtn = (bg, border, color) => ({
-    flex: 1, padding: '12px 8px', borderRadius: 14, background: bg,
-    color: color || '#faf6f0', border: border || 'none',
-    fontSize: 13, fontWeight: 700, cursor: 'pointer'
-  });
+  // Auto-start camera on mount
+  useEffect(() => { startCamera(); return () => stopCamera(); }, []);
 
   if (captured) {
     return (
       <div style={{ position:'relative', width:'100%', height:200, borderRadius:18, overflow:'hidden', marginBottom:16, cursor:'pointer' }}
-        onClick={() => { onCapture(null); }}>
+        onClick={() => { onCapture(null); startCamera(); }}>
         <img src={captured} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
         <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px', textAlign:'center',
           background:'linear-gradient(transparent,rgba(50,25,5,0.8))', fontSize:12, color:'#e8d5b7' }}>
@@ -141,53 +122,44 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
     <div style={{ marginBottom: 16 }}>
       <canvas ref={canvasRef} style={{ display:'none' }} />
       <input type="file" ref={fileRef} onChange={onFileChange} accept="image/*" style={{ display:'none' }} />
-
-      {camActive ? (
-        <div style={{ position:'relative', width:'100%', borderRadius:18, overflow:'hidden', background:'#1a0d05', marginBottom:10 }}>
+      <div style={{ position:'relative', width:'100%', borderRadius:18, overflow:'hidden', background:'#1a0d05', minHeight:200 }}>
+        {camError ? (
+          <div style={{ height:200, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8 }}>
+            <div style={{ fontSize:36 }}>📷</div>
+            <span style={{ color:'#9a7a5a', fontSize:13 }}>Camera not available</span>
+            <button onClick={() => fileRef.current && fileRef.current.click()}
+              style={{ padding:'10px 20px', borderRadius:50, background:'linear-gradient(135deg,#c17f4a,#a0622e)', color:'#fff', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+              🖼 Upload Photo
+            </button>
+          </div>
+        ) : (
           <video ref={videoRef} autoPlay playsInline muted
             style={{ width:'100%', display:'block', borderRadius:18, maxHeight:280, objectFit:'cover' }} />
-          <div style={{ position:'absolute', bottom:14, left:0, right:0, display:'flex', justifyContent:'center', gap:12, padding:'0 20px' }}>
-            <button onClick={stopCamera}
-              style={{ padding:'11px 22px', borderRadius:50, background:'rgba(60,30,10,0.75)', color:'#e8d5b7',
-                border:'1px solid rgba(200,160,100,0.3)', fontSize:14, fontWeight:700, cursor:'pointer' }}>
-              ✕ Cancel
+        )}
+        <div style={{ position:'absolute', bottom:12, left:0, right:0, display:'flex', justifyContent:'center', gap:10, padding:'0 16px' }}>
+          {!camError && (
+            <button onClick={() => fileRef.current && fileRef.current.click()}
+              style={{ padding:'10px 18px', borderRadius:50, background:'rgba(30,15,5,0.75)', color:'#e8d5b7',
+                border:'1px solid rgba(200,160,100,0.3)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+              🖼 Gallery
             </button>
+          )}
+          {!camError && (
             <button onClick={capturePhoto} disabled={!videoReady}
               style={{ padding:'11px 28px', borderRadius:50,
                 background: videoReady ? 'linear-gradient(135deg,#c17f4a,#a0622e)' : 'rgba(160,120,80,0.4)',
                 color:'#fff', border:'none', fontSize:15, fontWeight:800,
                 cursor: videoReady ? 'pointer' : 'not-allowed',
-                boxShadow: videoReady ? '0 4px 16px rgba(193,127,74,0.4)' : 'none',
-                transition:'all 0.3s' }}>
-              {videoReady ? '📸 ' + t.capture : '⏳ Loading...'}
+                boxShadow: videoReady ? '0 4px 16px rgba(193,127,74,0.4)' : 'none', transition:'all 0.3s' }}>
+              {videoReady ? '📸 ' + t.capture : '⏳ Starting...'}
             </button>
-          </div>
+          )}
         </div>
-      ) : (
-        <div style={{ width:'100%', height:160, borderRadius:18,
-          border:'2px dashed rgba(160,120,80,0.25)', display:'flex',
-          alignItems:'center', justifyContent:'center', flexDirection:'column', gap:6,
-          background:'rgba(180,140,100,0.05)', marginBottom:10 }}>
-          <div style={{ fontSize:40 }}>📷</div>
-          <span style={{ color:'#9a7a5a', fontSize:13, fontWeight:600 }}>Add a photo of the waste</span>
-        </div>
-      )}
-
-      {!camActive && (
-        <div style={{ display:'flex', gap:10 }}>
-          <button onClick={startCamera}
-            style={miniBtn('linear-gradient(135deg,#c17f4a,#a0622e)')}>
-            📷 {t.takePhoto}
-          </button>
-          <button onClick={() => fileRef.current && fileRef.current.click()}
-            style={miniBtn('rgba(180,140,100,0.12)', '1px solid rgba(160,120,80,0.25)', '#9a7a5a')}>
-            🖼 {t.uploadGallery}
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
+
 
 // --- Main App ---
 function App() {
@@ -216,9 +188,10 @@ function App() {
       const r = await callGemini(
         `You are a waste classification expert for India (BBMP Bengaluru guidelines). The user has ${wasteImg ? "shared a photo of waste" : `described: "${txt}"`}.
 Respond ONLY in valid JSON with these exact fields:
-{"item":"name","bin":"wet|dry|hazardous|ewaste","binLabel":"Wet Waste|Dry Waste|Hazardous Waste|E-Waste","why":"one sentence","ifWrong":"consequence","didYouKnow":"one fact","impactScore":5,"actionLabel":"NGO label or empty","actionUrl":"URL or empty","ecoAction":{"icon":"emoji","title":"e.g. Compost It!","tagline":"motivating one-liner","steps":["step1","step2","step3"]}}
+{"item":"name","bin":"wet|dry|hazardous|ewaste","binLabel":"Wet Waste|Dry Waste|Hazardous Waste|E-Waste","why":"one sentence","ifWrong":"consequence","didYouKnow":"one fact","impactScore":5,"actionLabel":"NGO label or empty","actionUrl":"URL or empty","ecoAction":{"icon":"emoji","title":"e.g. Compost It!","tagline":"motivating one-liner","youtubeUrl":"youtube URL or empty string","steps":["step1","step2","step3"]}}
 IMPORTANT: If bin is "ewaste", you MUST set actionLabel to "Recycle via Zolopik" and actionUrl to "https://zolopik.com". Do not use any other e-waste service.
-For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit composting; newspaper -> papier-mache craft or Goonj donation; old phone -> factory reset, wipe data, then book free Zolopik pickup at zolopik.com; bleach bottle -> rinse 3x, air-dry, dry waste; syringe -> sharps container then BBMP hazardous; laptop/battery/charger -> book free Zolopik e-waste pickup at zolopik.com; tea bag -> compost or balcony garden; cardboard box -> upcycle into organizer; printer ink cartridge -> HP/Canon take-back. Steps must be practical and India-specific (max 3 steps, concise). Translate why, ifWrong, didYouKnow, ecoAction.tagline, ecoAction.steps into ${lName}. Keep all other fields in English.`,
+IMPORTANT: If the item is any fruit or vegetable peel (mango peel, banana peel, orange peel, lemon peel, potato peel, onion peel, apple peel, etc.) you MUST set ecoAction.youtubeUrl to "https://youtu.be/IOEr5yLmlyw". For all other items set youtubeUrl to empty string "".
+For ecoAction be VERY specific to the exact item. Examples: banana/mango peel -> pit composting with Zolopik video link; newspaper -> papier-mache or Goonj donation; old phone -> factory reset then Zolopik pickup; bleach bottle -> rinse 3x then dry waste; syringe -> sharps container then BBMP hazardous; laptop/battery -> Zolopik e-waste pickup; tea bag -> compost; cardboard -> upcycle. Max 3 steps, India-specific. Translate why, ifWrong, didYouKnow, ecoAction.tagline, ecoAction.steps into ${lName}. Keep all other fields in English.`,
         wasteImg
       );
       setRes1(r); setStep(2);
@@ -385,6 +358,18 @@ For ecoAction be VERY specific to the exact item. Examples: banana peel -> pit c
                   </div>
                 ))}
               </div>
+              {res1.ecoAction.youtubeUrl && (
+                <a href={res1.ecoAction.youtubeUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display:'flex', alignItems:'center', gap:12, marginTop:16, padding:'12px 14px', borderRadius:14,
+                    background:'rgba(255,0,0,0.06)', border:'1px solid rgba(220,0,0,0.15)', textDecoration:'none' }}>
+                  <div style={{ width:42, height:42, borderRadius:10, background:'#ff0000', display:'flex', alignItems:'center',
+                    justifyContent:'center', fontSize:18, color:'#fff', flexShrink:0 }}>▶</div>
+                  <div>
+                    <div style={{ fontSize:10, fontWeight:700, color:'#cc0000', textTransform:'uppercase', letterSpacing:1, marginBottom:2 }}>Watch on YouTube</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:P.text, lineHeight:1.4 }}>How to compost peels for your plants</div>
+                  </div>
+                </a>
+              )}
             </div>
           )}
 
