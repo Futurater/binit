@@ -67,15 +67,23 @@ const P = {
 // --- Camera Zone Component ---
 function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
   const [camActive, setCamActive] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
   const startCamera = async () => {
+    setVideoReady(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play().then(() => setVideoReady(true)).catch(() => setVideoReady(true));
+        };
+      }
       setCamActive(true);
     } catch (e) {
       console.warn('Camera unavailable:', e);
@@ -84,16 +92,21 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
   };
 
   const stopCamera = () => {
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(tr => tr.stop()); streamRef.current = null; }
     setCamActive(false);
+    setVideoReady(false);
   };
 
   const capturePhoto = () => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c) return;
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
+    // Use actual video dimensions, fall back to 640x480 if not yet available
+    const w = v.videoWidth || 640;
+    const h = v.videoHeight || 480;
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(v, 0, 0, w, h);
     const img = c.toDataURL('image/jpeg', 0.85);
+    if (!img || img === 'data:,') { console.warn('Capture empty'); return; }
     onCapture(img);
     stopCamera();
   };
@@ -134,12 +147,14 @@ function CameraZone({ onCapture, fileRef, captured, onFileChange, t }) {
                 border:'1px solid rgba(200,160,100,0.3)', fontSize:14, fontWeight:700, cursor:'pointer' }}>
               ✕ Cancel
             </button>
-            <button onClick={capturePhoto}
+            <button onClick={capturePhoto} disabled={!videoReady}
               style={{ padding:'11px 28px', borderRadius:50,
-                background:'linear-gradient(135deg,#c17f4a,#a0622e)', color:'#fff',
-                border:'none', fontSize:15, fontWeight:800, cursor:'pointer',
-                boxShadow:'0 4px 16px rgba(193,127,74,0.4)' }}>
-              📸 {t.capture}
+                background: videoReady ? 'linear-gradient(135deg,#c17f4a,#a0622e)' : 'rgba(160,120,80,0.4)',
+                color:'#fff', border:'none', fontSize:15, fontWeight:800,
+                cursor: videoReady ? 'pointer' : 'not-allowed',
+                boxShadow: videoReady ? '0 4px 16px rgba(193,127,74,0.4)' : 'none',
+                transition:'all 0.3s' }}>
+              {videoReady ? '📸 ' + t.capture : '⏳ Loading...'}
             </button>
           </div>
         </div>
